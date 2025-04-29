@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Email Notification Preferences{% endblock %}
+
+{% block content %}
+<div class="container py-4" x-data="emailPreferences()">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h2">Email Notification Preferences</h1>
+            <p class="text-muted">Manage which email notifications you receive from FreelanceFlow.</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="mb-4">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="emailNotificationsEnabled" 
+                        x-model="preferences.email_notifications_enabled"
+                        @change="updatePreference('email_notifications_enabled', preferences.email_notifications_enabled)">
+                    <label class="form-check-label fw-bold" for="emailNotificationsEnabled">
+                        Enable Email Notifications
+                    </label>
+                </div>
+                <div class="form-text text-muted">
+                    Master toggle for all email notifications. Turn this off to disable all email notifications.
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="mb-3">
+                <h5>Deal Notifications</h5>
+                <div class="ms-4">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnDealCreated"
+                            x-model="preferences.notify_on_deal_created"
+                            @change="updatePreference('notify_on_deal_created', preferences.notify_on_deal_created)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnDealCreated">
+                            New Deals
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnDealUpdated"
+                            x-model="preferences.notify_on_deal_updated"
+                            @change="updatePreference('notify_on_deal_updated', preferences.notify_on_deal_updated)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnDealUpdated">
+                            Deal Updates
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnDealStageChanged"
+                            x-model="preferences.notify_on_deal_stage_changed"
+                            @change="updatePreference('notify_on_deal_stage_changed', preferences.notify_on_deal_stage_changed)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnDealStageChanged">
+                            Deal Stage Changes
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h5>Client Notifications</h5>
+                <div class="ms-4">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnClientCreated"
+                            x-model="preferences.notify_on_client_created"
+                            @change="updatePreference('notify_on_client_created', preferences.notify_on_client_created)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnClientCreated">
+                            New Clients
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnClientUpdated"
+                            x-model="preferences.notify_on_client_updated"
+                            @change="updatePreference('notify_on_client_updated', preferences.notify_on_client_updated)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnClientUpdated">
+                            Client Updates
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h5>Invoice Notifications</h5>
+                <div class="ms-4">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnInvoiceCreated"
+                            x-model="preferences.notify_on_invoice_created"
+                            @change="updatePreference('notify_on_invoice_created', preferences.notify_on_invoice_created)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnInvoiceCreated">
+                            New Invoices
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnInvoicePaid"
+                            x-model="preferences.notify_on_invoice_paid"
+                            @change="updatePreference('notify_on_invoice_paid', preferences.notify_on_invoice_paid)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnInvoicePaid">
+                            Invoice Payments
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h5>Task Notifications</h5>
+                <div class="ms-4">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="notifyOnTaskCompleted"
+                            x-model="preferences.notify_on_task_completed"
+                            @change="updatePreference('notify_on_task_completed', preferences.notify_on_task_completed)"
+                            :disabled="!preferences.email_notifications_enabled">
+                        <label class="form-check-label" for="notifyOnTaskCompleted">
+                            Task Completions
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button class="btn btn-primary" @click="saveAllPreferences()" :disabled="isSaving">
+                    <template x-if="isSaving">
+                        <span>
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            Saving...
+                        </span>
+                    </template>
+                    <template x-if="!isSaving">
+                        <span>Save All Preferences</span>
+                    </template>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Test Notification</h5>
+        </div>
+        <div class="card-body">
+            <p>Send a test email to verify your notification settings.</p>
+            <button class="btn btn-outline-primary" @click="sendTestEmail()" :disabled="isSending">
+                <template x-if="isSending">
+                    <span>
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Sending...
+                    </span>
+                </template>
+                <template x-if="!isSending">
+                    <span>Send Test Email</span>
+                </template>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('emailPreferences', () => ({
+        // State
+        preferences: {
+            email_notifications_enabled: true,
+            notify_on_deal_created: true,
+            notify_on_deal_updated: true,
+            notify_on_deal_stage_changed: true,
+            notify_on_client_created: false,
+            notify_on_client_updated: false,
+            notify_on_invoice_created: true,
+            notify_on_invoice_paid: true,
+            notify_on_task_completed: false
+        },
+        isSaving: false,
+        isSending: false,
+        
+        // Lifecycle
+        init() {
+            this.loadPreferences();
+        },
+        
+        // Methods
+        async loadPreferences() {
+            try {
+                const response = await fetch('/api/users/me/email-preferences');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.preferences = data;
+                } else {
+                    Alpine.store('toast').error("Failed to load email preferences");
+                }
+            } catch (error) {
+                console.error('Error loading preferences:', error);
+                Alpine.store('toast').error("Error loading preferences");
+            }
+        },
+        
+        async updatePreference(preferenceName, value) {
+            try {
+                const response = await fetch('/api/users/me/email-preferences', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        [preferenceName]: value
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    this.preferences = data;
+                    
+                    // If master toggle is turned off, show a message
+                    if (preferenceName === 'email_notifications_enabled' && !value) {
+                        Alpine.store('toast').info("All email notifications have been disabled");
+                    } else if (preferenceName === 'email_notifications_enabled' && value) {
+                        Alpine.store('toast').success("Email notifications enabled");
+                    } else {
+                        Alpine.store('toast').success("Preference updated");
+                    }
+                } else {
+                    Alpine.store('toast').error("Failed to update preference");
+                    // Revert the change in the UI
+                    this.loadPreferences();
+                }
+            } catch (error) {
+                console.error('Error updating preference:', error);
+                Alpine.store('toast').error("Error updating preference");
+                this.loadPreferences();
+            }
+        },
+        
+        async saveAllPreferences() {
+            this.isSaving = true;
+            
+            try {
+                const response = await fetch('/api/users/me/email-preferences', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.preferences)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    this.preferences = data;
+                    Alpine.store('toast').success("All preferences saved successfully");
+                } else {
+                    Alpine.store('toast').error("Failed to save preferences");
+                }
+            } catch (error) {
+                console.error('Error saving preferences:', error);
+                Alpine.store('toast').error("Error saving preferences");
+            } finally {
+                this.isSaving = false;
+            }
+        },
+        
+        async sendTestEmail() {
+            this.isSending = true;
+            
+            try {
+                const response = await fetch('/api/users/me/send-test-email', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    Alpine.store('toast').success("Test email sent! Please check your inbox.");
+                } else {
+                    Alpine.store('toast').error("Failed to send test email");
+                }
+            } catch (error) {
+                console.error('Error sending test email:', error);
+                Alpine.store('toast').error("Error sending test email");
+            } finally {
+                this.isSending = false;
+            }
+        }
+    }));
+});
+</script>
+{% endblock %} 

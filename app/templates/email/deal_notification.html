@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deal Update: {{ deal_title }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            padding: 20px;
+            border: 1px solid #eee;
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .content {
+            margin-bottom: 20px;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .deal-info {
+            background-color: #eee;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .deal-info p {
+            margin: 5px 0;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 15px;
+            display: inline-block;
+            font-weight: bold;
+        }
+        .status-lead {
+            background-color: #3498db;
+            color: white;
+        }
+        .status-proposed {
+            background-color: #f39c12;
+            color: white;
+        }
+        .status-won {
+            background-color: #2ecc71;
+            color: white;
+        }
+        .footer {
+            font-size: 12px;
+            color: #777;
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+        </div>
+        
+        <div class="content">
+            <h2>Deal Update</h2>
+            
+            <p>Hi {{ user_name }},</p>
+            
+            <p>There has been an update to one of your deals:</p>
+            
+            <div class="deal-info">
+                <p><strong>Deal:</strong> {{ deal_title }}</p>
+                <p><strong>Client:</strong> {{ client_name }}</p>
+                <p><strong>Status:</strong> 
+                    {% if status == 'lead' %}
+                    <span class="status status-lead">Lead</span>
+                    {% elif status == 'proposed' %}
+                    <span class="status status-proposed">Proposed</span>
+                    {% elif status == 'won' %}
+                    <span class="status status-won">Won</span>
+                    {% else %}
+                    <span class="status">{{ status }}</span>
+                    {% endif %}
+                </p>
+            </div>
+            
+            <p>To view more details about this deal, click the button below:</p>
+            
+            <p style="text-align: center; margin: 30px 0;">
+                <a href="{{ deal_url }}" class="cta-button">View Deal</a>
+            </p>
+            
+            <p>Best regards,<br>The {{ app_name }} Team</p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; {{ app_name }} | This is an automated message, please do not reply.</p>
+            <p>You are receiving this email because you have notifications enabled in your account settings.</p>
+        </div>
+    </div>
+</body>
+</html> 

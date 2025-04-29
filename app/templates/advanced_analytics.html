@@ -1,0 +1,720 @@
+{% extends "base.html" %}
+
+{% block title %}Advanced Analytics{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  .analytics-header {
+    margin-bottom: 2rem;
+  }
+  
+  .forecast-card {
+    border-radius: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
+  }
+  
+  .forecast-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+  }
+  
+  .velocity-value {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  
+  .velocity-label {
+    font-size: 0.9rem;
+    opacity: 0.7;
+  }
+  
+  .chart-container {
+    position: relative;
+    margin: auto;
+    height: 300px;
+    margin-bottom: 30px;
+  }
+  
+  .risk-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  
+  .risk-row {
+    transition: background-color 0.2s;
+  }
+  
+  .risk-row:hover {
+    background-color: rgba(0,0,0,0.05);
+  }
+  
+  .prediction-list {
+    max-height: 350px;
+    overflow-y: auto;
+  }
+  
+  .prediction-row {
+    transition: background-color 0.2s;
+  }
+  
+  .prediction-row:hover {
+    background-color: rgba(0,0,0,0.05);
+  }
+  
+  .risk-high {
+    color: #e74c3c;
+  }
+  
+  .risk-medium {
+    color: #f39c12;
+  }
+  
+  .risk-low {
+    color: #2ecc71;
+  }
+  
+  .forecast-controls {
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  /* Loading indicator */
+  .loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 200px;
+  }
+  
+  /* Error message */
+  .error-message {
+    text-align: center;
+    padding: 2rem;
+    color: #e74c3c;
+  }
+  
+  /* Table styles */
+  .table-fixed {
+    table-layout: fixed;
+  }
+  
+  .table-fixed th, .table-fixed td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  /* Badge styles */
+  .badge-focus {
+    background-color: #2ecc71;
+    color: white;
+  }
+  
+  .badge-review {
+    background-color: #f39c12;
+    color: white;
+  }
+  
+  .badge-reconsider {
+    background-color: #e74c3c;
+    color: white;
+  }
+  
+  /* Confidence meter */
+  .confidence-meter {
+    height: 8px;
+    border-radius: 4px;
+    background-color: #ecf0f1;
+    overflow: hidden;
+    margin-top: 5px;
+  }
+  
+  .confidence-bar {
+    height: 100%;
+    background-color: #3498db;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .chart-container {
+      height: 250px;
+    }
+    
+    .velocity-value {
+      font-size: 1.5rem;
+    }
+    
+    .forecast-card {
+      margin-bottom: 1rem;
+    }
+    
+    .container-fluid {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" x-data="advancedAnalytics()">
+  <div class="analytics-header d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h2">Advanced Analytics</h1>
+    <div class="d-flex align-items-center gap-2">
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-file-earmark-arrow-down"></i> Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+          <li><a class="dropdown-item" href="/api/export/dashboard-pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2"></i>Full Analytics Report</a></li>
+          <li><a class="dropdown-item" href="/api/export/pipeline-summary-pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2"></i>Pipeline Forecast</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="/api/export/pipeline-summary-excel" target="_blank"><i class="bi bi-file-earmark-excel me-2"></i>Pipeline Forecast</a></li>
+          <li><a class="dropdown-item" href="/api/export/deals-excel" target="_blank"><i class="bi bi-file-earmark-excel me-2"></i>Deal Predictions</a></li>
+        </ul>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" @click="refreshData()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh Data
+      </button>
+    </div>
+  </div>
+
+  <!-- Forecast Controls -->
+  <div class="forecast-controls mb-4">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4 col-sm-6">
+        <label for="historyDays" class="form-label">Historical Data Period</label>
+        <select class="form-select" id="historyDays" x-model="forecastSettings.historyDays">
+          <option value="30">Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 180 days</option>
+          <option value="365">Last 365 days</option>
+        </select>
+      </div>
+      <div class="col-md-4 col-sm-6">
+        <label for="forecastDays" class="form-label">Forecast Horizon</label>
+        <select class="form-select" id="forecastDays" x-model="forecastSettings.forecastDays">
+          <option value="7">Next 7 days</option>
+          <option value="14">Next 14 days</option>
+          <option value="30">Next 30 days</option>
+          <option value="60">Next 60 days</option>
+          <option value="90">Next 90 days</option>
+        </select>
+      </div>
+      <div class="col-md-4 d-flex justify-content-end align-items-center mt-3 mt-md-0">
+        <button class="btn btn-primary" @click="generateForecast()">
+          <i class="bi bi-graph-up"></i> Generate Forecast
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="row g-3 mb-4">
+    <!-- Sales Velocity -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card forecast-card bg-primary text-white">
+        <div class="card-body">
+          <h5 class="card-title">Sales Velocity</h5>
+          <p class="velocity-value" x-text="formatCurrency(salesVelocity.sales_velocity || 0)"></p>
+          <p class="velocity-label">per day</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Revenue Projection -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card forecast-card bg-success text-white">
+        <div class="card-body">
+          <h5 class="card-title">30-Day Revenue Projection</h5>
+          <p class="velocity-value" x-text="formatCurrency(salesVelocity.revenue_projection || 0)"></p>
+          <p class="velocity-label">based on current velocity</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Opportunity Win Rate -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card forecast-card bg-info text-white">
+        <div class="card-body">
+          <h5 class="card-title">Win Rate</h5>
+          <p class="velocity-value"><span x-text="salesVelocity.win_rate || 0"></span>%</p>
+          <p class="velocity-label"><span x-text="salesVelocity.opportunities || 0"></span> opportunities</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Average Deal Size -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card forecast-card bg-warning text-white">
+        <div class="card-body">
+          <h5 class="card-title">Avg Deal Size</h5>
+          <p class="velocity-value" x-text="formatCurrency(salesVelocity.avg_deal_size || 0)"></p>
+          <p class="velocity-label">sales cycle: <span x-text="salesVelocity.sales_cycle_length || 0"></span> days</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forecast Chart Row -->
+  <div class="row g-4">
+    <!-- Pipeline Forecast Chart -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center bg-light">
+          <h5 class="card-title mb-0">Pipeline Value Forecast</h5>
+          <div class="d-flex align-items-center">
+            <span class="me-2">Forecast Confidence:</span>
+            <div class="d-flex flex-column">
+              <span class="text-muted" x-text="`${Math.round((pipelineForecast.confidence || 0) * 100)}%`"></span>
+              <div class="confidence-meter" style="width: 100px;">
+                <div class="confidence-bar" :style="`width: ${(pipelineForecast.confidence || 0) * 100}%`"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.pipelineForecast">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineForecast && pipelineForecast.forecast_dates && pipelineForecast.forecast_dates.length > 0">
+            <div class="chart-container">
+              <canvas id="pipelineForecastChart"></canvas>
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineForecast && (!pipelineForecast.forecast_dates || pipelineForecast.forecast_dates.length === 0)">
+            <div class="error-message">
+              <p>No pipeline forecast data available.</p>
+              <p class="text-muted">Not enough historical data to generate a forecast. Add more deals to your pipeline.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deal Predictions and Churn Risk -->
+  <div class="row g-4 mt-4">
+    <!-- Deal Outcome Predictions -->
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Deal Outcome Predictions</h5>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <select class="form-select" x-model="dealStage" @change="loadDealPredictions()">
+              <option value="lead">Lead Stage</option>
+              <option value="proposed">Proposed Stage</option>
+            </select>
+          </div>
+          <template x-if="isLoading.dealPredictions">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.dealPredictions && dealPredictions.length > 0">
+            <div class="prediction-list">
+              <table class="table table-hover table-fixed mb-0">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th class="text-end">Value</th>
+                    <th class="text-center">Win Probability</th>
+                    <th class="text-end">Expected Value</th>
+                    <th>Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="prediction in dealPredictions" :key="prediction.id">
+                    <tr class="prediction-row">
+                      <td x-text="prediction.client_name"></td>
+                      <td class="text-end" x-text="formatCurrency(prediction.value)"></td>
+                      <td class="text-center">
+                        <div class="progress" style="height: 10px;">
+                          <div class="progress-bar" role="progressbar" 
+                              :style="`width: ${prediction.win_probability}%`" 
+                              :class="{
+                                'bg-danger': prediction.win_probability < 40,
+                                'bg-warning': prediction.win_probability >= 40 && prediction.win_probability < 70,
+                                'bg-success': prediction.win_probability >= 70
+                              }"
+                              :aria-valuenow="prediction.win_probability" 
+                              aria-valuemin="0" 
+                              aria-valuemax="100">
+                          </div>
+                        </div>
+                        <small class="d-block mt-1" x-text="`${prediction.win_probability}%`"></small>
+                      </td>
+                      <td class="text-end" x-text="formatCurrency(prediction.expected_value)"></td>
+                      <td>
+                        <span class="badge" 
+                          :class="{
+                            'badge-focus': prediction.recommendation === 'Focus',
+                            'badge-review': prediction.recommendation === 'Review',
+                            'badge-reconsider': prediction.recommendation === 'Reconsider'
+                          }"
+                          x-text="prediction.recommendation">
+                        </span>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <template x-if="!isLoading.dealPredictions && dealPredictions.length === 0">
+            <div class="error-message">
+              <p>No deals available for prediction.</p>
+              <p class="text-muted">Add more deals to the selected stage to see predictions.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Client Churn Risk -->
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Client Churn Risk</h5>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.churnRisk">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.churnRisk && churnRisk.length > 0">
+            <div class="risk-list">
+              <table class="table table-hover table-fixed mb-0">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th class="text-center">Days Inactive</th>
+                    <th class="text-center">Win Rate</th>
+                    <th class="text-end">Risk Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="client in churnRisk" :key="client.id">
+                    <tr class="risk-row">
+                      <td x-text="client.name"></td>
+                      <td class="text-center" x-text="client.days_since_update"></td>
+                      <td class="text-center" x-text="`${client.win_rate}%`"></td>
+                      <td class="text-end">
+                        <span 
+                          :class="{
+                            'risk-high': client.risk_level === 'High',
+                            'risk-medium': client.risk_level === 'Medium',
+                            'risk-low': client.risk_level === 'Low'
+                          }"
+                          x-text="`${client.risk_score} (${client.risk_level})`">
+                        </span>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <template x-if="!isLoading.churnRisk && churnRisk.length === 0">
+            <div class="error-message">
+              <p>No client risk data available.</p>
+              <p class="text-muted">Add more clients and deals to see churn risk assessments.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('advancedAnalytics', () => ({
+    // Data
+    forecastSettings: {
+      historyDays: 90,
+      forecastDays: 30
+    },
+    pipelineForecast: {
+      forecast_dates: [],
+      lead_forecast: [],
+      proposed_forecast: [],
+      won_forecast: [],
+      total_forecast: [],
+      confidence: 0
+    },
+    salesVelocity: {},
+    churnRisk: [],
+    dealPredictions: [],
+    dealStage: 'proposed',
+    forecastChart: null,
+    
+    // Loading states
+    isLoading: {
+      pipelineForecast: true,
+      salesVelocity: true,
+      churnRisk: true,
+      dealPredictions: true
+    },
+    
+    // Initialize
+    init() {
+      this.loadData();
+    },
+    
+    // Load all data
+    async loadData() {
+      await Promise.all([
+        this.generateForecast(),
+        this.loadSalesVelocity(),
+        this.loadChurnRisk(),
+        this.loadDealPredictions()
+      ]);
+    },
+    
+    // Refresh all data
+    refreshData() {
+      // Reset loading states
+      for (const key in this.isLoading) {
+        this.isLoading[key] = true;
+      }
+      
+      // Clear existing chart
+      if (this.forecastChart) {
+        this.forecastChart.destroy();
+        this.forecastChart = null;
+      }
+      
+      // Reload all data
+      this.loadData();
+      
+      // Show toast message
+      Alpine.store('toast').info('Analytics data refreshed');
+    },
+    
+    // Generate pipeline forecast
+    async generateForecast() {
+      this.isLoading.pipelineForecast = true;
+      
+      if (this.forecastChart) {
+        this.forecastChart.destroy();
+        this.forecastChart = null;
+      }
+      
+      try {
+        const response = await fetch(`/api/analytics/forecast?days_history=${this.forecastSettings.historyDays}&days_forecast=${this.forecastSettings.forecastDays}`);
+        if (response.ok) {
+          this.pipelineForecast = await response.json();
+          this.$nextTick(() => {
+            if (this.pipelineForecast.forecast_dates && this.pipelineForecast.forecast_dates.length > 0) {
+              this.renderForecastChart();
+            }
+          });
+        } else {
+          Alpine.store('toast').error('Failed to load forecast data');
+        }
+      } catch (error) {
+        console.error('Error loading forecast:', error);
+        Alpine.store('toast').error('Network error while loading forecast data');
+      } finally {
+        this.isLoading.pipelineForecast = false;
+      }
+    },
+    
+    // Load sales velocity metrics
+    async loadSalesVelocity() {
+      this.isLoading.salesVelocity = true;
+      
+      try {
+        const response = await fetch('/api/analytics/sales-velocity');
+        if (response.ok) {
+          this.salesVelocity = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load sales velocity metrics');
+        }
+      } catch (error) {
+        console.error('Error loading sales velocity:', error);
+        Alpine.store('toast').error('Network error while loading sales velocity metrics');
+      } finally {
+        this.isLoading.salesVelocity = false;
+      }
+    },
+    
+    // Load churn risk data
+    async loadChurnRisk() {
+      this.isLoading.churnRisk = true;
+      
+      try {
+        const response = await fetch('/api/analytics/churn-risk');
+        if (response.ok) {
+          this.churnRisk = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load churn risk data');
+        }
+      } catch (error) {
+        console.error('Error loading churn risk:', error);
+        Alpine.store('toast').error('Network error while loading churn risk data');
+      } finally {
+        this.isLoading.churnRisk = false;
+      }
+    },
+    
+    // Load deal predictions
+    async loadDealPredictions() {
+      this.isLoading.dealPredictions = true;
+      
+      try {
+        const response = await fetch(`/api/analytics/deal-predictions?stage=${this.dealStage}`);
+        if (response.ok) {
+          this.dealPredictions = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load deal predictions');
+        }
+      } catch (error) {
+        console.error('Error loading deal predictions:', error);
+        Alpine.store('toast').error('Network error while loading deal predictions');
+      } finally {
+        this.isLoading.dealPredictions = false;
+      }
+    },
+    
+    // Render forecast chart
+    renderForecastChart() {
+      const ctx = document.getElementById('pipelineForecastChart');
+      if (!ctx) return;
+      
+      // Determine where historical data ends and forecast begins
+      const forecastStartIndex = 0; // Since our API only returns forecast
+      
+      this.forecastChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: this.pipelineForecast.forecast_dates,
+          datasets: [
+            {
+              label: 'Lead (Forecast)',
+              data: this.pipelineForecast.lead_forecast,
+              borderColor: '#3498db',
+              backgroundColor: 'rgba(52, 152, 219, 0.1)',
+              borderDash: [5, 5],
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Proposed (Forecast)',
+              data: this.pipelineForecast.proposed_forecast,
+              borderColor: '#f39c12',
+              backgroundColor: 'rgba(243, 156, 18, 0.1)',
+              borderDash: [5, 5],
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Won (Forecast)',
+              data: this.pipelineForecast.won_forecast,
+              borderColor: '#2ecc71',
+              backgroundColor: 'rgba(46, 204, 113, 0.1)',
+              borderDash: [5, 5],
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Total (Forecast)',
+              data: this.pipelineForecast.total_forecast,
+              borderColor: '#9b59b6',
+              backgroundColor: 'rgba(155, 89, 182, 0.1)',
+              borderDash: [5, 5],
+              tension: 0.3,
+              fill: false,
+              borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  let label = context.dataset.label || '';
+                  if (label) {
+                    label += ': ';
+                  }
+                  if (context.parsed.y !== null) {
+                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                  }
+                  return label;
+                }
+              }
+            },
+            annotation: {
+              annotations: {
+                forecastStart: {
+                  type: 'line',
+                  xMin: forecastStartIndex,
+                  xMax: forecastStartIndex,
+                  borderColor: 'rgba(0, 0, 0, 0.3)',
+                  borderWidth: 2,
+                  borderDash: [6, 6],
+                  label: {
+                    display: true,
+                    content: 'Forecast Start',
+                    position: 'start'
+                  }
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(value) {
+                  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 3 }).format(value);
+                }
+              }
+            }
+          }
+        }
+      });
+    },
+    
+    // Format currency
+    formatCurrency(value) {
+      return new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+  }));
+});
+</script>
+{% endblock %} 

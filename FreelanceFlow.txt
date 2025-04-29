@@ -1,0 +1,164 @@
+# Freelancer SaaS – Final Concept (v1.0)
+
+### Purpose
+A lightweight, opinionated SaaS for solo freelancers that keeps **getting‑paid** at the center: track clients, move deals, create invoices, and monitor cash‑flow — all in a single page‑driven app you can run for years with almost zero ops overhead.
+
+---
+## 1 · Core MVP Features
+| Feature | User story | Notes |
+|---------|------------|-------|
+| **Client card** | “As a freelancer I store basic contact info & notes.” | Table view + modal edit. |
+| **Kanban (3‑stage)** | “I drag deals from *Lead* → *Proposed* → *Won*.” | SortableJS; no automations yet. |
+| **Invoice builder** | “I add line items, click *Generate PDF*, send Stripe link.” | One‑off invoices only (recurring later). |
+| **Dashboard** | “I instantly see paid / outstanding / pipeline € and today’s tasks.” | 4 stat cards + mini‑chart.
+| **Feedback link** | “I can tell the dev what I love/hate.” | Writes to `feedback` table, emails you via Resend/Postmark. |
+| **CSV import** | “I bring my existing client list in under 2 min.” | Browser parses CSV → bulk insert. |
+
+*Deferred*: AI auto‑drafts, client portal, recurring invoices, role‑based access.
+
+---
+## 2 · High‑Level Architecture
+```
+Browser  ─┬─>  FastAPI  ─>  SQLite (Litestream) ───┐
+         │                  ▲                     │
+HTMX/JS   │                  │                     │
+         │                  └─> Groq LLM (chat)    │
+         │                                        │
+         └─>  Stripe Checkout <────────────────────┘
+```
+_All parts live in **one Render service** running a Docker container._
+
+---
+## 3 · Tech Stack
+| Layer | Choice | Reason |
+|-------|--------|--------|
+| **Front‑end** | **HTMX + Alpine.js + Tailwind + shadcn/ui** | No build step, progressive enhancement, rapid UI. |
+| *(optional micro‑app)* | React (Vite) for Kanban | Only if drag‑drop feels easier in React. |
+| **API server** | **FastAPI** (Python 3.12) | Async, type‑hinted, automatic docs. |
+| **ORM** | **SQLModel** | SQLAlchemy core + Pydantic models; perfect for SQLite. |
+| **Database** | **SQLite** (`/data/app.db`) | Local, zero‑config, ACID for single tenant. |
+| **Durability** | **Litestream → S3** | WAL streaming every few seconds; point‑in‑time restore. |
+| **AI service** | **Groq** (`mixtral‑8x7b‑32768`) | OpenAI‑compatible SDK; hosted in EU. |
+| **PDF generation** | **react‑pdf** inside Supabase Edge Function* | Pixel‑perfect, brandable invoices. |
+| **Payments** | **Stripe Checkout Links** | Outsource PCI & email receipts. |
+| **E‑mail** | **Resend** (or Postmark) | Transactional & feedback notifications. |
+| **Hosting** | **Render (Docker)** | Free TLS, deploy on `git push`, EU region. |
+| **Analytics** | **PostHog (self‑host)** | Page & event tracking, GDPR‑friendly. |
+| **Testing** | `pytest`, `pytest‑asyncio`, **Playwright** | Unit + e2e coverage of money flow. |
+
+_*Supabase Edge Function used only for PDF; the rest of Supabase is not required when you use SQLite. Remove if you’d rather generate PDF in Python with ReportLab or WeasyPrint._
+
+---
+## 4 · File/Folder Layout
+```
+/app
+├─ main.py            # FastAPI routes & app factory
+├─ models.py          # SQLModel tables
+├─ crud.py            # Thin data helpers
+├─ services/
+│   ├─ ai.py          # Groq helper
+│   └─ pdf.ts         # react‑pdf Edge Function (TypeScript)
+├─ templates/         # Jinja2 + HTMX partials
+├─ static/            # Tailwind output & icons
+├─ data/app.db        # SQLite file (git‑ignored)
+├─ Dockerfile
+├─ litestream.yml
+└─ render.yaml
+```
+
+---
+## 5 · Database Schema (SQLModel)
+```python
+class Client(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Deal(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    client_id: int = Field(foreign_key="client.id")
+    stage: str  # lead | proposed | won
+    value: int  # cents
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Invoice(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    client_id: int = Field(foreign_key="client.id")
+    number: str
+    total: int  # cents
+    pdf_url: str
+    due_date: date
+    status: str  # draft | sent | paid | overdue
+
+class InvoiceItem(SQLModel, table=True):
+    invoice_id: int = Field(foreign_key="invoice.id", primary_key=True)
+    description: str
+    qty: int
+    unit_price: int  # cents
+
+class Task(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    client_id: int | None = Field(default=None, foreign_key="client.id")
+    title: str
+    due_date: date | None = None
+    done: bool = False
+
+class Feedback(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str | None = None
+    path: str
+    body: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+```
+
+---
+## 6 · Key API End‑points (FastAPI)
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET /clients` | List & search clients |
+| `POST /clients` | Create client |
+| `PATCH /clients/{id}` | Update client |
+| `GET /deals` | Kanban data |
+| `POST /deals/{id}/move` | Change stage, update value |
+| `POST /invoices` | Build invoice, trigger PDF & Stripe link |
+| `POST /stripe/webhook` | Mark invoice **paid** |
+| `GET /dashboard/summary` | Stats for the 4 cards |
+| `POST /feedback` | Store feedback & send email |
+
+All JSON; everything behind JWT session from Supabase Auth.
+
+---
+## 7 · DevOps & CI
+* **Dockerfile**: installs Python deps → curl‑installs Litestream → runs backup + `uvicorn`.
+* **Litestream**: WAL → S3 versioned bucket; point‑in‑time restore via `litestream restore`.
+* **GitHub Actions**:
+  * `pytest` & `pytest‑asyncio`
+  * `playwright install` then headless e2e run
+  * On `main` success → `render.yaml` deploy.
+* **Environment Variables**: `GROQ_API_KEY, STRIPE_SECRET, POSTHOG_KEY, S3_BUCKET`, etc.
+
+---
+## 8 · Development Plan (6 weeks)
+| Week | Deliverables |
+|------|--------------|
+| 1 | Repo bootstrap, Docker, auth, DB, Litestream. |
+| 2 | Client CRUD + feedback banner live. |
+| 3 | 3‑column Kanban + CSV import. |
+| 4 | Invoice builder → PDF → Stripe. |
+| 5 | Dashboard + error & empty states, PostHog events. |
+| 6 | Mobile polish, tests, CI, Render prod deploy. |
+
+---
+## 9 · Post‑MVP Roadmap (teaser)
+* Recurring invoices & auto‑reminders
+* AI: polite nudge generator, scope breakdown from email → invoice draft
+* Role‑based access (bookkeeper) & multi‑currency
+* Client portal with file‑upload & ticketing
+
+---
+### ☑️ Next Step
+Tell me which part you’d like scaffolding first — **models, routes, or UI skeleton** — and I’ll generate the starter code accordingly.
+

@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<style>
+  .dashboard-header {
+    margin-bottom: 2rem;
+  }
+  
+  .kpi-card {
+    border-radius: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
+  }
+  
+  .kpi-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+  }
+  
+  .kpi-value {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  
+  .kpi-label {
+    font-size: 0.9rem;
+    opacity: 0.7;
+  }
+  
+  .chart-container {
+    position: relative;
+    margin: auto;
+    height: 300px;
+    margin-bottom: 30px;
+  }
+  
+  .client-list {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  
+  .client-row {
+    transition: background-color 0.2s;
+  }
+  
+  .client-row:hover {
+    background-color: rgba(0,0,0,0.05);
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .chart-container {
+      height: 250px;
+    }
+    
+    .kpi-value {
+      font-size: 1.5rem;
+    }
+    
+    .dashboard-card {
+      margin-bottom: 1rem;
+    }
+    
+    .container-fluid {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+  }
+  
+  /* Loading indicator */
+  .loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 200px;
+  }
+  
+  /* Error message */
+  .error-message {
+    text-align: center;
+    padding: 2rem;
+    color: #e74c3c;
+  }
+  
+  /* Table styles */
+  .table-fixed {
+    table-layout: fixed;
+  }
+  
+  .table-fixed th, .table-fixed td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" x-data="dashboard()">
+  <div class="dashboard-header d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h2">Dashboard</h1>
+    <div class="d-flex align-items-center gap-2">
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-file-earmark-arrow-down"></i> Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+          <li><h6 class="dropdown-header">PDF Reports</h6></li>
+          <li><a class="dropdown-item" href="/api/export/dashboard-pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2"></i>Full Dashboard Report</a></li>
+          <li><a class="dropdown-item" href="/api/export/pipeline-summary-pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2"></i>Pipeline Summary</a></li>
+          <li><a class="dropdown-item" href="/api/export/client-distribution-pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2"></i>Client Distribution</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Excel Files</h6></li>
+          <li><a class="dropdown-item" href="/api/export/pipeline-summary-excel" target="_blank"><i class="bi bi-file-earmark-excel me-2"></i>Pipeline Summary</a></li>
+          <li><a class="dropdown-item" href="/api/export/client-distribution-excel" target="_blank"><i class="bi bi-file-earmark-excel me-2"></i>Client Distribution</a></li>
+          <li><a class="dropdown-item" href="/api/export/deals-excel" target="_blank"><i class="bi bi-file-earmark-excel me-2"></i>All Deals</a></li>
+        </ul>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" @click="refreshData()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh Data
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="row g-3 mb-4">
+    <!-- Total Pipeline Value -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card kpi-card bg-primary text-white">
+        <div class="card-body">
+          <h5 class="card-title">Total Pipeline</h5>
+          <p class="kpi-value" x-text="formatCurrency(pipelineStats.total?.value || 0)"></p>
+          <p class="kpi-label">across <span x-text="pipelineStats.total?.count || 0"></span> deals</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Conversion Rate -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card kpi-card bg-success text-white">
+        <div class="card-body">
+          <h5 class="card-title">Win Rate</h5>
+          <p class="kpi-value"><span x-text="conversionRates.overall_conversion || 0"></span>%</p>
+          <p class="kpi-label">Lead to Won conversion</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Avg Deal Size -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card kpi-card bg-info text-white">
+        <div class="card-body">
+          <h5 class="card-title">Avg Deal Size</h5>
+          <p class="kpi-value" x-text="formatCurrency(calculateAvgDealSize())"></p>
+          <p class="kpi-label">average value per deal</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Deals Won -->
+    <div class="col-md-3 col-sm-6">
+      <div class="card kpi-card bg-warning text-white">
+        <div class="card-body">
+          <h5 class="card-title">Deals Won</h5>
+          <p class="kpi-value" x-text="pipelineStats.stages?.won?.count || 0"></p>
+          <p class="kpi-label">worth <span x-text="formatCurrency(pipelineStats.stages?.won?.value || 0)"></span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row -->
+  <div class="row g-4">
+    <!-- Pipeline Trend Chart -->
+    <div class="col-lg-8">
+      <div class="card dashboard-card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Pipeline Trend</h5>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.pipelineTrend">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineTrend && pipelineTrend.dates && pipelineTrend.dates.length > 0">
+            <div class="chart-container">
+              <canvas id="pipelineTrendChart"></canvas>
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineTrend && (!pipelineTrend.dates || pipelineTrend.dates.length === 0)">
+            <div class="error-message">
+              <p>No pipeline trend data available.</p>
+              <p class="text-muted">As deals progress through your pipeline, trend data will appear here.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Stage Distribution Chart -->
+    <div class="col-lg-4">
+      <div class="card dashboard-card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Deals by Stage</h5>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.stageChart">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.stageChart && stageChartUrl">
+            <div class="text-center">
+              <img :src="stageChartUrl" alt="Deals by Stage" class="img-fluid" />
+            </div>
+          </template>
+          <template x-if="!isLoading.stageChart && !stageChartUrl">
+            <div class="error-message">
+              <p>No deal distribution data available.</p>
+              <p class="text-muted">Add deals to different stages to see distribution.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Second Row of Charts -->
+  <div class="row g-4 mt-2">
+    <!-- Pipeline Value Chart -->
+    <div class="col-lg-5">
+      <div class="card dashboard-card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Pipeline Value by Stage</h5>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.pipelineChart">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineChart && pipelineChartUrl">
+            <div class="text-center">
+              <img :src="pipelineChartUrl" alt="Pipeline Value by Stage" class="img-fluid" />
+            </div>
+          </template>
+          <template x-if="!isLoading.pipelineChart && !pipelineChartUrl">
+            <div class="error-message">
+              <p>No pipeline value data available.</p>
+              <p class="text-muted">Add deals to see value distribution.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Top Clients Table -->
+    <div class="col-lg-7">
+      <div class="card dashboard-card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Top Clients by Deal Value</h5>
+        </div>
+        <div class="card-body p-0">
+          <template x-if="isLoading.clientDistribution">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.clientDistribution && clientDistribution.length > 0">
+            <div class="client-list">
+              <table class="table table-hover table-fixed mb-0">
+                <thead>
+                  <tr>
+                    <th class="ps-3">Client</th>
+                    <th class="text-center">Deals</th>
+                    <th class="text-end pe-3">Total Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="client in clientDistribution" :key="client.id">
+                    <tr class="client-row">
+                      <td class="ps-3" x-text="client.name"></td>
+                      <td class="text-center" x-text="client.deal_count"></td>
+                      <td class="text-end pe-3" x-text="client.total_value_formatted"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <template x-if="!isLoading.clientDistribution && clientDistribution.length === 0">
+            <div class="error-message">
+              <p>No client distribution data available.</p>
+              <p class="text-muted">Add deals for clients to see top clients.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Conversion Funnel -->
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card dashboard-card">
+        <div class="card-header bg-light">
+          <h5 class="card-title mb-0">Conversion Funnel</h5>
+        </div>
+        <div class="card-body">
+          <template x-if="isLoading.conversionRates">
+            <div class="loading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!isLoading.conversionRates">
+            <div class="row text-center">
+              <div class="col-md-4 mb-4 mb-md-0">
+                <div class="p-3 bg-light rounded">
+                  <h2 class="h4">Lead</h2>
+                  <h3 class="display-5" x-text="conversionRates.lead_count || 0"></h3>
+                  <div class="mt-3">
+                    <span class="text-success" x-text="`${conversionRates.lead_to_proposed || 0}%`"></span> 
+                    convert to Proposed
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <i class="bi bi-arrow-down fs-2 text-muted"></i>
+                </div>
+              </div>
+              <div class="col-md-4 mb-4 mb-md-0">
+                <div class="p-3 bg-light rounded">
+                  <h2 class="h4">Proposed</h2>
+                  <h3 class="display-5" x-text="conversionRates.proposed_count || 0"></h3>
+                  <div class="mt-3">
+                    <span class="text-success" x-text="`${conversionRates.proposed_to_won || 0}%`"></span> 
+                    convert to Won
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <i class="bi bi-arrow-down fs-2 text-muted"></i>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="p-3 bg-light rounded">
+                  <h2 class="h4">Won</h2>
+                  <h3 class="display-5" x-text="conversionRates.won_count || 0"></h3>
+                  <div class="mt-3">
+                    <span class="text-success" x-text="`${conversionRates.overall_conversion || 0}%`"></span> 
+                    overall conversion
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('dashboard', () => ({
+    // Data
+    pipelineStats: {
+      stages: {},
+      total: {}
+    },
+    pipelineTrend: {
+      dates: [],
+      lead_values: [],
+      proposed_values: [],
+      won_values: []
+    },
+    conversionRates: {},
+    clientDistribution: [],
+    stageChartUrl: null,
+    pipelineChartUrl: null,
+    trendChart: null,
+    
+    // Loading states
+    isLoading: {
+      pipelineStats: true,
+      pipelineTrend: true,
+      conversionRates: true,
+      clientDistribution: true,
+      stageChart: true,
+      pipelineChart: true
+    },
+    
+    // Initialize
+    init() {
+      this.loadData();
+    },
+    
+    // Load all data
+    async loadData() {
+      await Promise.all([
+        this.loadPipelineStats(),
+        this.loadPipelineTrend(),
+        this.loadConversionRates(),
+        this.loadClientDistribution(),
+        this.loadStageChart(),
+        this.loadPipelineChart()
+      ]);
+    },
+    
+    // Refresh all data
+    refreshData() {
+      // Reset loading states
+      for (const key in this.isLoading) {
+        this.isLoading[key] = true;
+      }
+      
+      // Clear existing chart
+      if (this.trendChart) {
+        this.trendChart.destroy();
+        this.trendChart = null;
+      }
+      
+      // Reload all data
+      this.loadData();
+      
+      // Show toast message
+      Alpine.store('toast').info('Dashboard data refreshed');
+    },
+    
+    // Load pipeline statistics
+    async loadPipelineStats() {
+      this.isLoading.pipelineStats = true;
+      
+      try {
+        const response = await fetch('/api/pipeline/summary');
+        if (response.ok) {
+          this.pipelineStats = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load pipeline statistics');
+        }
+      } catch (error) {
+        console.error('Error loading pipeline statistics:', error);
+        Alpine.store('toast').error('Network error while loading pipeline statistics');
+      } finally {
+        this.isLoading.pipelineStats = false;
+      }
+    },
+    
+    // Load pipeline trend data
+    async loadPipelineTrend() {
+      this.isLoading.pipelineTrend = true;
+      
+      try {
+        const response = await fetch('/api/analytics/pipeline-trends');
+        if (response.ok) {
+          this.pipelineTrend = await response.json();
+          this.$nextTick(() => {
+            if (this.pipelineTrend.dates && this.pipelineTrend.dates.length > 0) {
+              this.renderTrendChart();
+            }
+          });
+        } else {
+          Alpine.store('toast').error('Failed to load pipeline trend data');
+        }
+      } catch (error) {
+        console.error('Error loading pipeline trend:', error);
+        Alpine.store('toast').error('Network error while loading pipeline trend data');
+      } finally {
+        this.isLoading.pipelineTrend = false;
+      }
+    },
+    
+    // Load conversion rates
+    async loadConversionRates() {
+      this.isLoading.conversionRates = true;
+      
+      try {
+        const response = await fetch('/api/analytics/conversion-rates');
+        if (response.ok) {
+          this.conversionRates = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load conversion rates');
+        }
+      } catch (error) {
+        console.error('Error loading conversion rates:', error);
+        Alpine.store('toast').error('Network error while loading conversion rates');
+      } finally {
+        this.isLoading.conversionRates = false;
+      }
+    },
+    
+    // Load client distribution
+    async loadClientDistribution() {
+      this.isLoading.clientDistribution = true;
+      
+      try {
+        const response = await fetch('/api/analytics/client-distribution');
+        if (response.ok) {
+          this.clientDistribution = await response.json();
+        } else {
+          Alpine.store('toast').error('Failed to load client distribution');
+        }
+      } catch (error) {
+        console.error('Error loading client distribution:', error);
+        Alpine.store('toast').error('Network error while loading client distribution');
+      } finally {
+        this.isLoading.clientDistribution = false;
+      }
+    },
+    
+    // Load stage chart
+    async loadStageChart() {
+      this.isLoading.stageChart = true;
+      
+      try {
+        const response = await fetch('/api/analytics/deals-by-stage-chart');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.error) {
+            this.stageChartUrl = null;
+          } else {
+            this.stageChartUrl = data.image;
+          }
+        } else {
+          Alpine.store('toast').error('Failed to load stage chart');
+          this.stageChartUrl = null;
+        }
+      } catch (error) {
+        console.error('Error loading stage chart:', error);
+        Alpine.store('toast').error('Network error while loading stage chart');
+        this.stageChartUrl = null;
+      } finally {
+        this.isLoading.stageChart = false;
+      }
+    },
+    
+    // Load pipeline value chart
+    async loadPipelineChart() {
+      this.isLoading.pipelineChart = true;
+      
+      try {
+        const response = await fetch('/api/analytics/pipeline-value-chart');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.error) {
+            this.pipelineChartUrl = null;
+          } else {
+            this.pipelineChartUrl = data.image;
+          }
+        } else {
+          Alpine.store('toast').error('Failed to load pipeline chart');
+          this.pipelineChartUrl = null;
+        }
+      } catch (error) {
+        console.error('Error loading pipeline chart:', error);
+        Alpine.store('toast').error('Network error while loading pipeline chart');
+        this.pipelineChartUrl = null;
+      } finally {
+        this.isLoading.pipelineChart = false;
+      }
+    },
+    
+    // Render trend chart
+    renderTrendChart() {
+      const ctx = document.getElementById('pipelineTrendChart');
+      if (!ctx) return;
+      
+      // Destroy existing chart if it exists
+      if (this.trendChart) {
+        this.trendChart.destroy();
+      }
+      
+      this.trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: this.pipelineTrend.dates,
+          datasets: [
+            {
+              label: 'Lead',
+              data: this.pipelineTrend.lead_values,
+              borderColor: '#3498db',
+              backgroundColor: 'rgba(52, 152, 219, 0.1)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Proposed',
+              data: this.pipelineTrend.proposed_values,
+              borderColor: '#f39c12',
+              backgroundColor: 'rgba(243, 156, 18, 0.1)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Won',
+              data: this.pipelineTrend.won_values,
+              borderColor: '#2ecc71',
+              backgroundColor: 'rgba(46, 204, 113, 0.1)',
+              tension: 0.3,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  let label = context.dataset.label || '';
+                  if (label) {
+                    label += ': ';
+                  }
+                  if (context.parsed.y !== null) {
+                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                  }
+                  return label;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(value) {
+                  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 3 }).format(value);
+                }
+              }
+            }
+          }
+        }
+      });
+    },
+    
+    // Calculate average deal size
+    calculateAvgDealSize() {
+      if (!this.pipelineStats.total || this.pipelineStats.total.count === 0) {
+        return 0;
+      }
+      
+      return this.pipelineStats.total.value / this.pipelineStats.total.count;
+    },
+    
+    // Format currency
+    formatCurrency(value) {
+      return new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+  }));
+});
+</script>
+{% endblock %} 
