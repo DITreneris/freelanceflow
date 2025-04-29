@@ -7,81 +7,192 @@ on:
     branches: [ main, development ]
 
 jobs:
-  test:
+  lint-and-format:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+          pip install -r requirements.txt
+      - name: Check formatting with black
+        run: |
+          black --check app tests
+      - name: Check imports with isort
+        run: |
+          isort --check-only --profile black app tests
+      - name: Lint with flake8
+        run: |
+          flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 app tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Check types with mypy
+        run: |
+          mypy app
+
+  unit-and-integration-tests:
+    name: Unit and Integration Tests
+    needs: lint-and-format
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9, 3.10]
-
+        python-version: [3.10, 3.11]
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-    - name: Run tests with coverage
-      run: |
-        pytest --cov=app tests/
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: false
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+      - name: Set up test database
+        run: |
+          mkdir -p app/data
+          touch app/data/test.db
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=app tests/ --cov-report=xml
+        env:
+          DATABASE_URL: sqlite:///app/data/test.db
+          SECRET_KEY: test_secret_key
+          TESTING: "True"
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          verbose: true
 
-  lint:
+  e2e-tests:
+    name: End-to-End Tests
+    needs: unit-and-integration-tests
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 black isort
-    - name: Lint with flake8
-      run: |
-        flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics
-    - name: Check formatting with black
-      run: |
-        black --check app tests
-    - name: Check imports with isort
-      run: |
-        isort --check-only --profile black app tests
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Install Playwright
+        run: |
+          pip install pytest-playwright
+          playwright install --with-deps chromium
+      - name: Create test database
+        run: |
+          mkdir -p app/data
+          touch app/data/test.db
+      - name: Start server in background
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
+          echo $! > server.pid
+          sleep 5  # Give server time to start
+        env:
+          DATABASE_URL: sqlite:///app/data/test.db
+          SECRET_KEY: test_secret_key
+          TESTING: "True"
+      - name: Run Playwright tests
+        run: |
+          pytest tests/e2e/ --browser chromium
+      - name: Stop server
+        run: |
+          kill $(cat server.pid)
+      - name: Upload server logs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: server-logs
+          path: server.log
 
-  build-and-deploy:
-    needs: [test, lint]
+  build-staging:
+    name: Build and Deploy to Staging
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint-and-format, unit-and-integration-tests, e2e-tests]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Run database migrations
-      run: |
-        python -m alembic upgrade head
-      env:
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
-    - name: Deploy to Production
-      run: |
-        echo "Deploying to production..."
-        # Add deployment steps here (e.g., to Heroku, AWS, etc.)
-      env:
-        # Production environment variables
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        SECRET_KEY: ${{ secrets.SECRET_KEY }}
-        GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-        GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-        GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }} 
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Create environment file for staging
+        run: |
+          python create_env_template.py
+          cp .env.production.template .env
+          # Replace placeholders with staging values from GitHub secrets
+          sed -i "s|your-db-hostname|${{ secrets.STAGING_DB_HOST }}|g" .env
+          sed -i "s|your-user|${{ secrets.STAGING_DB_USER }}|g" .env
+          sed -i "s|your-password|${{ secrets.STAGING_DB_PASSWORD }}|g" .env
+          sed -i "s|your-db-name|${{ secrets.STAGING_DB_NAME }}|g" .env
+          sed -i "s|replace_with_secure_random_string_min_32_chars|${{ secrets.STAGING_SECRET_KEY }}|g" .env
+          sed -i "s|your-domain.com|${{ secrets.STAGING_DOMAIN }}|g" .env
+      - name: Deploy to Render Staging
+        run: |
+          echo "Deploying to Render staging environment..."
+          # Here you would use Render API or GitHub Deployment integration
+          # For now this is a placeholder that would be replaced with actual deployment commands
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+
+  build-production:
+    name: Build and Deploy to Production
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
+    needs: [build-staging]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Create environment file for production
+        run: |
+          python create_env_template.py
+          cp .env.production.template .env
+          # Replace placeholders with production values from GitHub secrets
+          sed -i "s|your-db-hostname|${{ secrets.PROD_DB_HOST }}|g" .env
+          sed -i "s|your-user|${{ secrets.PROD_DB_USER }}|g" .env
+          sed -i "s|your-password|${{ secrets.PROD_DB_PASSWORD }}|g" .env
+          sed -i "s|your-db-name|${{ secrets.PROD_DB_NAME }}|g" .env
+          sed -i "s|replace_with_secure_random_string_min_32_chars|${{ secrets.PROD_SECRET_KEY }}|g" .env
+          sed -i "s|your-domain.com|${{ secrets.PROD_DOMAIN }}|g" .env
+      - name: Run database migrations
+        run: |
+          python -m alembic upgrade head
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Deploy to Render Production
+        run: |
+          echo "Deploying to Render production environment..."
+          # Here you would use Render API or GitHub Deployment integration
+          # For now this is a placeholder that would be replaced with actual deployment commands
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }} 

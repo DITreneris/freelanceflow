@@ -51,18 +51,26 @@ FreelanceFlow is a lightweight SaaS for solo freelancers centered around getting
 - [ ] Implement basic CRUD operations for all models
 
 #### Authentication & Security
-- [ ] Integrate Supabase Auth for login/signup
-- [ ] Implement Google OAuth2 sign-in for frictionless authentication
+- [ ] Integrate Google OAuth2 for login/signup
+- [ ] Implement JWT token authentication for session management
 - [ ] Add social login buttons (prioritizing Google) with fallback email option
 - [ ] Implement JWT middleware for API routes
 - [ ] Set up environment variables for secrets
 - [ ] Configure CORS and security headers
 - [ ] Create simplified onboarding flow for new users
 
+#### Database Strategy
+- [ ] Configure SQLite with WAL mode for local development
+- [ ] Set up PostgreSQL via Neon for production environment
+- [ ] Implement database connection pooling for production
+- [ ] Create SQLModel schemas with appropriate indexes
+- [ ] Set up Alembic migrations for version control
+
 #### Backup & Reliability
-- [ ] Configure Litestream for SQLite WAL streaming to S3
+- [ ] Configure automatic backups for Neon PostgreSQL
 - [ ] Set up database backup testing and validation
 - [ ] Create restore procedures and documentation
+- [ ] Implement health check endpoints
 
 #### Design System Setup
 - [ ] Create color palette and typography system with Tailwind
@@ -71,14 +79,15 @@ FreelanceFlow is a lightweight SaaS for solo freelancers centered around getting
 - [ ] Create design tokens for spacing, shadows, and animations
 - [ ] Implement dark/light mode theming
 
-#### CI Pipeline
+#### CI/CD Pipeline
 - [ ] Set up GitHub Actions workflow for linting/testing
 - [ ] Configure Render deployment with render.yaml
-- [ ] Create Docker build/push workflow
+- [ ] Implement automatic staging deployments on PR merge
+- [ ] Set up production deployment process
 
 ### Risks & Mitigations
 - Risk: OAuth2 integration delays blocking auth flows. Mitigation: Spike Google OAuth2 on Day 1, fallback to email auth.
-- Risk: Litestream backup/restore failures. Mitigation: Proof-of-concept backup & restore test on Day 2.
+- Risk: Database migration issues between SQLite and PostgreSQL. Mitigation: Use compatible data types and test migrations early.
 
 ## Phase 2: Client Management Module (Week 2)
 
@@ -314,10 +323,12 @@ FreelanceFlow is a lightweight SaaS for solo freelancers centered around getting
 - [ ] Implement feature usage tracking
 
 #### Production Deployment
-- [ ] Finalize Render configuration
-- [ ] Set up production environment variables
-- [ ] Configure domain and SSL
-- [ ] Implement monitoring and alerting
+- [ ] Finalize Render configuration via render.yaml
+- [ ] Set up Neon PostgreSQL database connection
+- [ ] Configure production environment variables
+- [ ] Set up domain and SSL certificates
+- [ ] Implement database migration process for deployment
+- [ ] Configure monitoring and alerting
 - [ ] Create deployment documentation
 - [ ] Set up automated health checks
 
@@ -398,12 +409,14 @@ FreelanceFlow is a lightweight SaaS for solo freelancers centered around getting
 - GitHub Actions workflow for each PR/push
 - Sequential steps: lint → type check → test → build
 - Fail-fast approach to catch issues early
+- Automated testing against SQLite for speed
 
 ### Continuous Deployment
-- Automatic deployment to staging on main branch merge
-- Production deployment via manual approval
+- Automatic deployment to Render staging environment on main branch merge
+- Production deployment via manual approval in Render dashboard
+- Database migration execution during deployment
 - Rollback capability for failed deployments
-- Database migration safety checks
+- Environment-specific configuration management
 
 ## Monitoring & Maintenance
 
@@ -412,9 +425,10 @@ FreelanceFlow is a lightweight SaaS for solo freelancers centered around getting
 - Performance monitoring of key API endpoints
 - Database query performance tracking
 - User experience monitoring (page load times, errors)
+- Render service metrics and logs
 
 ### Backup Strategy
-- Litestream continuous replication to S3
+- Automatic Neon PostgreSQL backups
 - Point-in-time recovery capability
 - Weekly verification of backup integrity
 - Documented restore procedures
@@ -478,10 +492,15 @@ DATABASE_URL=sqlite:///app/data/app.db
 SECRET_KEY=your-secret-key-for-jwt
 ```
 
+For production, use the `.env.production.template` file which is configured for Neon PostgreSQL and Render deployment.
+
 ### Running the Application
 1. Install dependencies: `pip install -r requirements.txt`
 2. Start the server: `uvicorn app.main:app --reload`
 3. Access the application at http://localhost:8000
+
+### Deployment
+The application is configured for deployment on Render using the `render.yaml` configuration file. The database is hosted on Neon PostgreSQL.
 
 ### Next Steps for Sprint 2
 - Connect the application to SQLite database
